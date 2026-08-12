@@ -99,15 +99,21 @@ jobs:
           OUT=pioled-raspios-lite-${{ matrix.arch }}.img
           mv raspios.img "$OUT"
 
-          # Imager needs the *uncompressed* size and hash, plus which
-          # first-boot mechanism the OS uses (Bookworm: systemd firstrun,
-          # Trixie and later: cloud-init) — detect it from the rootfs.
-          EXTRACT_SIZE=$(stat -c%s "$OUT")
-          EXTRACT_SHA256=$(sha256sum "$OUT" | cut -d' ' -f1)
+          # Detect which first-boot mechanism the OS uses (Bookworm: systemd
+          # firstrun, Trixie and later: cloud-init) from the rootfs. Mount
+          # read-only with journal replay disabled (ro,noload) and do this
+          # BEFORE hashing — a normal ext4 mount writes to the image
+          # (superblock, journal), which would invalidate the hash.
           LOOP=$(sudo losetup -fP --show "$OUT"); sudo partx -a "$LOOP" 2>/dev/null || true
-          mkdir -p rootmnt && sudo mount "${LOOP}p2" rootmnt
+          mkdir -p rootmnt && sudo mount -o ro,noload "${LOOP}p2" rootmnt
           if [ -d rootmnt/etc/cloud ]; then INIT=cloudinit; else INIT=systemd; fi
           sudo umount rootmnt && sudo losetup -d "$LOOP"
+
+          # Imager needs the *uncompressed* size and hash for extract
+          # verification; the .sha256 asset below is of the compressed
+          # download instead, for verifying the file people download.
+          EXTRACT_SIZE=$(stat -c%s "$OUT")
+          EXTRACT_SHA256=$(sha256sum "$OUT" | cut -d' ' -f1)
 
           xz -T0 -6 "$OUT"
           sha256sum "$OUT.xz" > "$OUT.xz.sha256"
