@@ -1,0 +1,16 @@
+[Unit]
+Description=PiOLED IP address display
+# No network-online dependency: the program starts immediately, shows
+# "NO IP YET" with the heartbeat dot, and picks up the address on its own.
+
+[Service]
+ExecStart=/usr/local/bin/pioled-ip
+Restart=on-failure
+# The binary only needs /dev/i2c-1. DynamicUser lets systemd run it as a
+# throwaway unprivileged user, so this works no matter what account name
+# was chosen when the SD card was imaged.
+DynamicUser=yes
+SupplementaryGroups=i2c
+
+[Install]
+WantedBy=multi-user.target

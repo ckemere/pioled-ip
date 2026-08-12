@@ -1,0 +1,67 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+jobs:
+  # Compile the drawing code natively and diff its output against the
+  # golden framebuffer dump — catches font/rendering regressions.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build render test
+        run: gcc -O2 -Wall -Wextra -Werror -o render-test test/render-test.c
+      - name: Compare against golden output
+        run: ./render-test | diff - test/expected.txt
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - arch: arm64        # 64-bit Raspberry Pi OS (Pi 3/4/5, Zero 2)
+            cc: aarch64-linux-gnu-gcc
+            pkg: gcc-aarch64-linux-gnu
+          - arch: armhf        # 32-bit Raspberry Pi OS (Pi Zero/1, or 32-bit installs)
+            cc: arm-linux-gnueabihf-gcc
+            pkg: gcc-arm-linux-gnueabihf
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cross-compiler
+        run: sudo apt-get update && sudo apt-get install -y ${{ matrix.pkg }}
+      - name: Compile static binary
+        run: |
+          ${{ matrix.cc }} -O2 -Wall -Wextra -Werror -static \
+            -o pioled-ip-${{ matrix.arch }} pioled-ip.c
+          file pioled-ip-${{ matrix.arch }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pioled-ip-${{ matrix.arch }}
+          path: pioled-ip-${{ matrix.arch }}
+
+  # On a version tag (git tag v1.0 && git push --tags), publish a Release
+  # with both binaries attached, so imaging machines can just download them.
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - name: Create release with binaries
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            pioled-ip-arm64 pioled-ip-armhf \
+            pioled-ip.service inject-pioled.sh \
+            --title "$GITHUB_REF_NAME" --generate-notes
