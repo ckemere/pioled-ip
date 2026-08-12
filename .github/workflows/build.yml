@@ -63,5 +63,47 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" \
             pioled-ip-arm64 pioled-ip-armhf \
-            pioled-ip.service inject-pioled.sh \
+            pioled-ip.service inject-pioled.sh inject-pioled-mac.sh \
             --title "$GITHUB_REF_NAME" --generate-notes
+
+  # Also build ready-to-flash "golden" images: official Raspberry Pi OS Lite
+  # with pioled-ip already injected. Download -> inject -> recompress ->
+  # upload to the release, all inside one job so no Actions artifact storage
+  # is used for the large files (only release assets, which have no quota).
+  golden-image:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build, release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    strategy:
+      matrix:
+        include:
+          - arch: arm64
+            image_url: https://downloads.raspberrypi.com/raspios_lite_arm64_latest
+          - arch: armhf
+            image_url: https://downloads.raspberrypi.com/raspios_lite_armhf_latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: pioled-ip-${{ matrix.arch }}
+      - name: Download official Raspberry Pi OS Lite image
+        run: |
+          curl -fsSL -o raspios.img.xz '${{ matrix.image_url }}'
+          xz -d raspios.img.xz
+      - name: Inject pioled-ip
+        run: sudo ./inject-pioled.sh raspios.img ./pioled-ip-${{ matrix.arch }}
+      - name: Compress and checksum
+        run: |
+          OUT=pioled-raspios-lite-${{ matrix.arch }}.img
+          mv raspios.img "$OUT"
+          xz -T0 -6 "$OUT"
+          sha256sum "$OUT.xz" > "$OUT.xz.sha256"
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "$GITHUB_REF_NAME" \
+            pioled-raspios-lite-${{ matrix.arch }}.img.xz \
+            pioled-raspios-lite-${{ matrix.arch }}.img.xz.sha256

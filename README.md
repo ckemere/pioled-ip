@@ -30,13 +30,41 @@ CI builds both on every push; tagged releases (v*) have them attached.
 
 ## Bake into an SD card at imaging time
 
+Three options; all give a display that works from the very first boot
+(binary installed, service enabled, I2C on, i2c-dev module loaded).
+
+### Option A: modify locally (Linux)
+
 Flash Raspberry Pi OS as usual, then before ejecting:
 
     sudo ./inject-pioled.sh /dev/sdX ./pioled-ip-arm64
 
-Also works on .img files (loop-mounted automatically). Installs the binary,
-enables the service, turns on I2C in config.txt, and adds the i2c-dev
-module — the display works from the very first boot.
+Also works on .img files (loop-mounted automatically), so you can prepare
+a golden image once and flash it repeatedly.
+
+### Option B: modify locally (macOS, via Docker)
+
+macOS cannot mount the ext4 root partition, so on a Mac the injection runs
+inside a small Linux container against the .img file (needs Docker Desktop):
+
+    xz -dk 2026-xx-xx-raspios-bookworm-arm64.img.xz
+    ./inject-pioled-mac.sh 2026-xx-xx-raspios-bookworm-arm64.img ./pioled-ip-arm64
+
+Then flash the modified .img with Raspberry Pi Imager ("Use custom"). Keep
+inject-pioled-mac.sh next to inject-pioled.sh and pioled-ip.service — all
+three are attached to every release.
+
+### Option C: download a pre-built golden image
+
+Every tagged release includes ready-to-flash images with pioled-ip already
+injected into official Raspberry Pi OS Lite:
+
+    pioled-raspios-lite-arm64.img.xz   (Pi 3/4/5, Zero 2)
+    pioled-raspios-lite-armhf.img.xz   (Pi Zero/1, 32-bit)
+
+Flash directly with Raspberry Pi Imager ("Use custom" accepts .img.xz) or
+any other tool. A .sha256 file is published alongside each image. Imager's
+own customization (hostname, Wi-Fi, user) composes fine on top.
 
 ## Tests
 
