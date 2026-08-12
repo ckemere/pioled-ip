@@ -1,7 +1,8 @@
 # pioled-ip
 
 Shows the Raspberry Pi's hostname, network interface, and IP address on an
-Adafruit PiOLED (SSD1306 128x32, I2C). Single C file, no dependencies beyond
+[Adafruit PiOLED](https://www.adafruit.com/product/3527) 
+(SSD1306 128x32, I2C). Single C file, no dependencies beyond
 libc and the kernel's i2c-dev interface. A blinking dot in the top-right
 corner shows the program is alive; before DHCP completes it reads NO IP YET.
 
