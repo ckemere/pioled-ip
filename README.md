@@ -63,8 +63,17 @@ injected into official Raspberry Pi OS Lite:
     pioled-raspios-lite-armhf.img.xz   (Pi Zero/1, 32-bit)
 
 Flash directly with Raspberry Pi Imager ("Use custom" accepts .img.xz) or
-any other tool. A .sha256 file is published alongside each image. Imager's
-own customization (hostname, Wi-Fi, user) composes fine on top.
+any other tool. A .sha256 file is published alongside each image.
+
+Note: Imager does not offer its OS customisation step (hostname, Wi-Fi,
+user, SSH) for images picked via "Use custom" — it needs repository
+metadata to know how. Each release therefore also publishes imager.json.
+Point Imager at it once (Options -> Content Repository -> custom URL):
+
+    https://github.com/ckemere/pioled-ip/releases/latest/download/imager.json
+
+and the pioled images appear in Imager's OS list as regular entries, with the
+full customisation flow available.
 
 ## Tests
 

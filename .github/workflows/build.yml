@@ -94,16 +94,61 @@ jobs:
           xz -d raspios.img.xz
       - name: Inject pioled-ip
         run: sudo bash ./inject-pioled.sh raspios.img ./pioled-ip-${{ matrix.arch }}
-      - name: Compress and checksum
+      - name: Compress, checksum, and Imager metadata
         run: |
           OUT=pioled-raspios-lite-${{ matrix.arch }}.img
           mv raspios.img "$OUT"
+
+          # Imager needs the *uncompressed* size and hash, plus which
+          # first-boot mechanism the OS uses (Bookworm: systemd firstrun,
+          # Trixie and later: cloud-init) — detect it from the rootfs.
+          EXTRACT_SIZE=$(stat -c%s "$OUT")
+          EXTRACT_SHA256=$(sha256sum "$OUT" | cut -d' ' -f1)
+          LOOP=$(sudo losetup -fP --show "$OUT"); sudo partx -a "$LOOP" 2>/dev/null || true
+          mkdir -p rootmnt && sudo mount "${LOOP}p2" rootmnt
+          if [ -d rootmnt/etc/cloud ]; then INIT=cloudinit; else INIT=systemd; fi
+          sudo umount rootmnt && sudo losetup -d "$LOOP"
+
           xz -T0 -6 "$OUT"
           sha256sum "$OUT.xz" > "$OUT.xz.sha256"
+
+          jq -n \
+            --arg name "Raspberry Pi OS Lite (${{ matrix.arch }}) + pioled-ip" \
+            --arg desc "Official Raspberry Pi OS Lite with the PiOLED IP display preinstalled ($GITHUB_REF_NAME)" \
+            --arg url "https://github.com/${{ github.repository }}/releases/download/$GITHUB_REF_NAME/$OUT.xz" \
+            --arg rd "$(date +%Y-%m-%d)" --arg init "$INIT" \
+            --argjson es "$EXTRACT_SIZE" --arg esha "$EXTRACT_SHA256" \
+            --argjson ds "$(stat -c%s "$OUT.xz")" \
+            '{name:$name, description:$desc, url:$url, release_date:$rd,
+              extract_size:$es, extract_sha256:$esha, image_download_size:$ds,
+              init_format:$init}' > imager-${{ matrix.arch }}.json
       - name: Upload to release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release upload "$GITHUB_REF_NAME" \
             pioled-raspios-lite-${{ matrix.arch }}.img.xz \
-            pioled-raspios-lite-${{ matrix.arch }}.img.xz.sha256
+            pioled-raspios-lite-${{ matrix.arch }}.img.xz.sha256 \
+            imager-${{ matrix.arch }}.json
+
+  # Merge the per-arch fragments into one imager.json, so Raspberry Pi
+  # Imager can be pointed at the release (Options -> Content Repository ->
+  # https://github.com/OWNER/REPO/releases/latest/download/imager.json)
+  # and offer these images WITH the OS customisation step.
+  imager-repo:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: golden-image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Build and publish imager.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "$GITHUB_REF_NAME" --repo "${{ github.repository }}" -p 'imager-*.json'
+          jq -s '{os_list: .}' imager-*.json > imager.json
+          gh release upload "$GITHUB_REF_NAME" --repo "${{ github.repository }}" imager.json
+          for f in imager-*.json; do
+            gh release delete-asset "$GITHUB_REF_NAME" "$f" --repo "${{ github.repository }}" -y
+          done
